@@ -26,55 +26,43 @@ function App() {
         </button>
       </div>
       <div className="
-        grid
-        h-[90vh] w-full
-        gap-4
-        grid-cols-1 grid-rows-[auto_auto_auto_auto]
-        md:grid-cols-[1fr_2fr_2fr] md:grid-rows-[1fr_1fr]
-        md:h-[80vh]
+        grid h-[90vh] w-full gap-4
+        grid-cols-1
+        md:grid-cols-[1fr_2fr_2fr]
       ">
-        {/* History (left, spans 2 rows) */}
+        {/* History (left) */}
         <div className="
           rounded-xl 
           p-4 
           bg-gray-100 dark:bg-gray-900 
           shadow 
-          md:row-span-2
+          h-full
         ">
           <History />
         </div>
-        {/* Chatbot (top middle) */}
-        <div className="
-          rounded-xl 
-          p-4 
-          bg-gray-100 dark:bg-gray-900
-          shadow
-        ">
-          <Chatbot />
+        {/* Center column: Chatbot + ScratchPad */}
+        <div className="flex flex-col h-full gap-4">
+          {/* Chatbot - fixed height */}
+          <div className="rounded-xl bg-gray-100 dark:bg-gray-900 shadow p-4" style={{ height: 180 }}>
+            <Chatbot />
+          </div>
+          {/* ScratchPad - resizable */}
+          <div className="flex-1 min-h-[120px]">
+            <ScratchPad />
+          </div>
         </div>
-        {/* Revit viewer (right, spans 2 rows) */}
+        {/* RevitViewer (right) */}
         <div className="
           rounded-xl 
           p-4 
           bg-gray-100 dark:bg-gray-900
           shadow
-          md:row-span-2
+          h-full
         ">
           <RevitViewer />
-        </div>
-        {/* Scratch pad (bottom middle) */}
-        <div className="
-          rounded-xl 
-          p-4 
-          bg-gray-100 dark:bg-gray-900
-          shadow
-          md:col-start-2
-        ">
-          <ScratchPad />
         </div>
       </div>
     </div>
   );
 }
-
 export default App;

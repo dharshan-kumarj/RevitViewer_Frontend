@@ -4,7 +4,6 @@ const Chatbot: React.FC = () => {
   return (
     <div className="flex flex-col h-full w-full justify-between">
       <span className="text-lg font-bold">Chatbot</span>
-      {/* Fake Chat input for mockup */}
       <div className="flex-1" />
       <div className="flex justify-center mt-2">
         <input
