@@ -1,39 +1,76 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import History from "./components/pages/History";
 import Chatbot from "./components/pages/Chatbot";
 import ScratchPad from "./components/pages/Scratchpad";
 import RevitViewer from "./components/pages/Revitviewer";
 
 function App() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
+
   return (
-    <div className="h-screen w-screen bg-black text-white p-4">
-      <div
-        className="
-          grid 
-          grid-cols-[1fr_2fr_2fr] 
-          grid-rows-[2fr_1fr] 
-          gap-2 
-          h-full w-full 
-          rounded-2xl border border-white
-        "
-        style={{
-          gridTemplateAreas: `
-            "history chatbot revit"
-            "history scratchpad revit"
-          `
-        }}
-      >
-        <div className="row-span-2 rounded-xl border border-white p-4" style={{ gridArea: "history" }}>
+    <div className="min-h-screen min-w-screen bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 p-2">
+      <div className="flex justify-end mb-2">
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded shadow"
+        >
+          {theme === "dark" ? "Switch to Light" : "Switch to Dark"}
+        </button>
+      </div>
+      <div className="
+        grid
+        h-[90vh] w-full
+        gap-4
+        grid-cols-1 grid-rows-[auto_auto_auto_auto]
+        md:grid-cols-[1fr_2fr_2fr] md:grid-rows-[1fr_1fr]
+        md:h-[80vh]
+      ">
+        {/* History (left, spans 2 rows) */}
+        <div className="
+          rounded-xl 
+          p-4 
+          bg-gray-100 dark:bg-gray-900 
+          shadow 
+          md:row-span-2
+        ">
           <History />
         </div>
-        <div className="rounded-xl border border-white p-4" style={{ gridArea: "chatbot" }}>
+        {/* Chatbot (top middle) */}
+        <div className="
+          rounded-xl 
+          p-4 
+          bg-gray-100 dark:bg-gray-900
+          shadow
+        ">
           <Chatbot />
         </div>
-        <div className="rounded-xl border border-white p-4" style={{ gridArea: "scratchpad" }}>
-          <ScratchPad />
-        </div>
-        <div className="row-span-2 rounded-xl border border-white p-4" style={{ gridArea: "revit" }}>
+        {/* Revit viewer (right, spans 2 rows) */}
+        <div className="
+          rounded-xl 
+          p-4 
+          bg-gray-100 dark:bg-gray-900
+          shadow
+          md:row-span-2
+        ">
           <RevitViewer />
+        </div>
+        {/* Scratch pad (bottom middle) */}
+        <div className="
+          rounded-xl 
+          p-4 
+          bg-gray-100 dark:bg-gray-900
+          shadow
+          md:col-start-2
+        ">
+          <ScratchPad />
         </div>
       </div>
     </div>
