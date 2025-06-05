@@ -19,6 +19,7 @@ function loadViewer() {
 }
 
 export default function RevitViewer() {
+  const [urn, setUrn] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [viewer, setViewer] = useState<Autodesk.Viewing.GuiViewer3D | null>(null);
@@ -97,9 +98,9 @@ export default function RevitViewer() {
       }
       setUploadProgress(50);
 
-      const { urn, file_size_mb } = await up.json();
-      log(`✔ Upload complete! URN → ${urn}`);
-      log(`📁 File size: ${file_size_mb} MB`);
+      const { urn: newUrn } = await up.json();
+      setUrn(newUrn);
+      log(`✔ Upload complete! URN → ${newUrn}`);
       setUploadProgress(60);
 
       // Poll
@@ -108,7 +109,7 @@ export default function RevitViewer() {
         tries = 0;
       while (status === "pending" && tries < 120) {
         await new Promise((r) => setTimeout(r, 3000));
-        const st = await fetch(`${API}/status/${urn}`).then((r) => r.json());
+        const st = await fetch(`${API}/status/${newUrn}`).then((r) => r.json());
         status = st.status;
         setUploadProgress(Math.min(60 + (tries / 120) * 30, 90));
         log(`⏳ Translation status: ${status} ${st.progress || ""}`);
@@ -131,7 +132,7 @@ export default function RevitViewer() {
           const v = new Autodesk.Viewing.GuiViewer3D(div);
           v.start();
           Autodesk.Viewing.Document.load(
-            `urn:${urn}`,
+            `urn:${newUrn}`,
             (doc) => {
               const vm = doc.getRoot().getDefaultGeometry() || doc.getRoot().search({ type: "geometry" })[0];
               if (vm) {
@@ -158,6 +159,28 @@ export default function RevitViewer() {
     } finally {
       setUploading(false);
     }
+  }
+
+  async function downloadDerivative() {
+    if (!urn) return;
+    log("⬇ Downloading original file…");
+    const res = await fetch(`${API}/download/${urn}`);
+    if (!res.ok) return log("❌ Download failed");
+
+    // pick up the actual filename from Content-Disposition or fallback to the original
+    const disp = res.headers.get("Content-Disposition") || "";
+    const m = /filename="?([^"]+)"?/.exec(disp);
+    const filename = m ? m[1] : file?.name || "download";
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   useEffect(() => () => viewer?.finish(), [viewer]);
@@ -218,6 +241,15 @@ export default function RevitViewer() {
       >
         {uploading ? "Processing..." : "Upload & View"}
       </button>
+
+      {urn && (
+        <button
+          onClick={downloadDerivative}
+          className="mt-4 py-2 px-4 bg-green-600 text-white rounded"
+        >
+          Download Rendered Model
+        </button>
+      )}
 
       <ul className="bg-gray-100 rounded p-4 text-xs space-y-1 h-40 overflow-y-auto">
         {logs.map((m, i) => (
