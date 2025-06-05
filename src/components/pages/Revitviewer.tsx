@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import "../../index.css";
+import "../ui/styles/RevitViewer.css";
 
 const API = "http://localhost:8000";
-
 let viewerScriptPromise: Promise<void> | null = null;
+
 function loadViewer() {
   if (!viewerScriptPromise) {
     viewerScriptPromise = new Promise((resolve, reject) => {
@@ -32,13 +32,20 @@ export default function RevitViewer() {
     setLogs((l) => [...l, `${new Date().toLocaleTimeString()}: ${m}`]);
   };
 
+  // load supported formats once
   useEffect(() => {
     fetch(`${API}/supported-formats`)
-      .then(r => r.json())
-      .then(data => setSupportedFormats(data))
-      .catch(err => log("Failed to load supported formats: " + err));
+      .then((r) => r.json())
+      .then((data) => setSupportedFormats(data))
+      .catch((err) => log("Failed to load supported formats: " + err));
   }, []);
 
+  // cleanup viewer when unmounting or resetting
+  useEffect(() => {
+    return () => viewer?.finish();
+  }, [viewer]);
+
+  // file chooser
   function choose(e: React.ChangeEvent<HTMLInputElement>) {
     if (viewer) {
       viewer.finish();
@@ -46,9 +53,11 @@ export default function RevitViewer() {
     }
     setLogs([]);
     setUploadProgress(0);
-    if (e.target.files?.length) setFile(e.target.files[0]);
+    const files = e.target.files;
+    if (files && files.length) setFile(files[0]);
   }
 
+  // upload, translate, and show in Forge Viewer
   async function run() {
     if (!file) return log("Pick a file first");
 
@@ -56,26 +65,24 @@ export default function RevitViewer() {
     const isRFA = name.endsWith(".rfa");
     const isRVT = name.endsWith(".rvt");
     const isIFC = name.endsWith(".ifc");
-    const fileSizeMB = file.size / (1024 * 1024);
+    const sizeMB = file.size / 1024 / 1024;
 
-    log(`Selected file: ${file.name} (${fileSizeMB.toFixed(2)} MB)`);
-
+    log(`Selected file: ${file.name} (${sizeMB.toFixed(2)} MB)`);
     if (isRFA) {
-      log("❌ RFA files are not supported. Convert to RVT first.");
-      return;
+      return log("❌ RFA not supported. Convert to RVT first.");
     }
     if (!isRVT && !isIFC) {
-      log("❌ Only .rvt and .ifc files are supported");
+      log("❌ Only .rvt and .ifc supported");
       log(
-        "📋 Supported formats: " +
+        "📋 Supported: " +
           (supportedFormats
             ? Object.values(supportedFormats.supported_formats).flat().join(", ")
             : "loading…")
       );
       return;
     }
-    if (fileSizeMB > 100) {
-      log(`⚠️ Large file detected (${fileSizeMB.toFixed(2)} MB). Might take a while.`);
+    if (sizeMB > 100) {
+      log(`⚠️ Large file (${sizeMB.toFixed(2)} MB) may take a while`);
     }
 
     setUploading(true);
@@ -84,27 +91,26 @@ export default function RevitViewer() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      log(`⬆ Uploading ${isIFC ? ".ifc" : ".rvt"} file …`);
+      log(`⬆ Uploading…`);
       setUploadProgress(20);
 
       const up = await fetch(`${API}/upload-rvt`, {
         method: "POST",
         body: fd,
-        signal: AbortSignal.timeout(30 * 60 * 1000), // 30 minutes
+        signal: AbortSignal.timeout(30 * 60 * 1000),
       });
       if (!up.ok) {
         const err = await up.text();
         throw new Error("Upload failed: " + err);
       }
       setUploadProgress(50);
-
       const { urn: newUrn } = await up.json();
       setUrn(newUrn);
-      log(`✔ Upload complete! URN → ${newUrn}`);
+      log(`✔ Upload complete – URN: ${newUrn}`);
       setUploadProgress(60);
 
-      // Poll
-      log("⏳ Waiting for translation…");
+      // poll for translation
+      log("⏳ Translating…");
       let status = "pending",
         tries = 0;
       while (status === "pending" && tries < 120) {
@@ -112,19 +118,19 @@ export default function RevitViewer() {
         const st = await fetch(`${API}/status/${newUrn}`).then((r) => r.json());
         status = st.status;
         setUploadProgress(Math.min(60 + (tries / 120) * 30, 90));
-        log(`⏳ Translation status: ${status} ${st.progress || ""}`);
-        if (status === "failed") throw new Error("❌ Translation failed.");
+        log(`⏳ Status: ${status} ${st.progress || ""}`);
+        if (status === "failed") throw new Error("Translation failed");
         tries++;
       }
-      if (status !== "success") throw new Error("❌ Translation timed out.");
-      log("✅ Translation complete");
+      if (status !== "success") throw new Error("Translation timed out");
+      log("✅ Translation done");
       setUploadProgress(95);
 
-      // Viewer
+      // initialize viewer
       const { access_token } = await fetch(`${API}/token`).then((r) => r.json());
-      log("🔑 Got viewer token");
+      log("🔑 Got token");
       await loadViewer();
-      log("🔥 Initializing viewer");
+      log("🔥 Starting viewer");
       Autodesk.Viewing.Initializer(
         { env: "AutodeskProduction", api: "derivativeV2", accessToken: access_token },
         () => {
@@ -134,14 +140,16 @@ export default function RevitViewer() {
           Autodesk.Viewing.Document.load(
             `urn:${newUrn}`,
             (doc) => {
-              const vm = doc.getRoot().getDefaultGeometry() || doc.getRoot().search({ type: "geometry" })[0];
-              if (vm) {
-                v.loadDocumentNode(doc, vm).then(() => {
-                  log("👀 Model loaded successfully");
+              const viewable =
+                doc.getRoot().getDefaultGeometry() ||
+                doc.getRoot().search({ type: "geometry" })[0];
+              if (viewable) {
+                v.loadDocumentNode(doc, viewable).then(() => {
+                  log("👀 Model loaded");
                   setUploadProgress(100);
                 });
               } else {
-                log("❌ No viewable geometry found");
+                log("❌ No viewable geometry");
                 setUploadProgress(100);
               }
             },
@@ -153,25 +161,23 @@ export default function RevitViewer() {
           setViewer(v);
         }
       );
-    } catch (error: any) {
-      log("❌ Error: " + (error.message || error));
+    } catch (err: any) {
+      log("❌ " + (err.message || err));
       setUploadProgress(0);
     } finally {
       setUploading(false);
     }
   }
 
+  // download original/derivative
   async function downloadDerivative() {
     if (!urn) return;
-    log("⬇ Downloading original file…");
+    log("⬇ Downloading…");
     const res = await fetch(`${API}/download/${urn}`);
     if (!res.ok) return log("❌ Download failed");
-
-    // pick up the actual filename from Content-Disposition or fallback to the original
     const disp = res.headers.get("Content-Disposition") || "";
     const m = /filename="?([^"]+)"?/.exec(disp);
     const filename = m ? m[1] : file?.name || "download";
-
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -183,81 +189,38 @@ export default function RevitViewer() {
     URL.revokeObjectURL(url);
   }
 
-  useEffect(() => () => viewer?.finish(), [viewer]);
-
   return (
-    <main className="max-w-xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">APS Revit ▶ Viewer</h1>
-      <div className="bg-yellow-50 border-yellow-200 rounded p-4">
-        <h2 className="font-semibold text-yellow-800">Important:</h2>
-        <p className="text-yellow-700 text-sm mt-1">
-          RFA files are not directly supported. Please convert to RVT first. Supported here:
-          <strong>.rvt</strong> and <strong>.ifc</strong>. Large files may take a few minutes.
-        </p>
-      </div>
-
-      <input
-        type="file"
-        accept=".rvt,.rfa,.ifc"
-        onChange={choose}
-        disabled={uploading}
-        className="block w-full text-sm file:px-4 file:py-2
-                   file:bg-blue-600 file:text-white file:rounded
-                   hover:file:bg-blue-700 disabled:opacity-50"
-      />
-
-      {file && (
-        <div className="text-sm text-gray-600">
-          Selected: {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
-          {file.size > 50 * 1024 * 1024 && (
-            <div className="text-orange-600 font-medium">
-              ⚠️ Large file – upload may take several minutes
-            </div>
-          )}
-        </div>
-      )}
-
-      {uploading && (
-        /* ... your existing progress bar ... */
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div
-            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${uploadProgress}%` }}
-          ></div>
-          <div className="text-sm text-gray-600 mt-1">
-            {uploadProgress < 60
-              ? "Uploading..."
-              : uploadProgress < 90
-              ? "Translating..."
-              : "Loading viewer..."}
-          </div>
-        </div>
-      )}
-
-      <button
-        onClick={run}
-        disabled={!file || uploading}
-        className="py-2 px-4 bg-blue-600 text-white rounded disabled:opacity-50"
-      >
-        {uploading ? "Processing..." : "Upload & View"}
-      </button>
-
-      {urn && (
+    <div className="revit-root">
+      {/* Top row: controls only */}
+      <header className="controls-header">
+        <input
+          type="file"
+          accept=".rvt,.rfa,.ifc"
+          onChange={choose}
+          disabled={uploading}
+          className="file-input"
+        />
         <button
-          onClick={downloadDerivative}
-          className="mt-4 py-2 px-4 bg-green-600 text-white rounded"
+          onClick={run}
+          disabled={!file || uploading}
+          className="btn-primary"
         >
-          Download Rendered Model
+          {uploading ? "Processing…" : "Upload & View"}
         </button>
-      )}
+        {urn && (
+          <button
+            onClick={downloadDerivative}
+            className="btn-secondary"
+          >
+            Download Model
+          </button>
+        )}
+      </header>
 
-      <ul className="bg-gray-100 rounded p-4 text-xs space-y-1 h-40 overflow-y-auto">
-        {logs.map((m, i) => (
-          <li key={i}>{m}</li>
-        ))}
-      </ul>
-
-      <div id="forge" className="border rounded w-full h-[600px]" />
-    </main>
+      {/* Bottom row: full-height Forge viewer */}
+      <main className="viewer-container">
+        <div id="forge" />
+      </main>
+    </div>
   );
 }
