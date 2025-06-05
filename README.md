@@ -1,54 +1,84 @@
-# React + TypeScript + Vite
+# React + Tailwind Revit Viewer Front-End
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Vite-powered React application styled with Tailwind CSS.  
+Allows users to upload and view Revit (`.rvt`) and IFC (`.ifc`) files via your APS backend, plus chat, scratch-pad and theme switching.
 
-Currently, two official plugins are available:
+## Prerequisites
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js (>= 14) and npm or Yarn  
+- APS backend running (e.g. `http://localhost:8000`)
 
-## Expanding the ESLint configuration
+## Environment
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Create a `.env` or `.env.local` in this folder:
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+# React-Tailwind-Template/.env
+VITE_API_URL=http://localhost:8000
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`VITE_API_URL` must point at your FastAPI server.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Install & Run
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
+```bash
+cd React-Tailwind-Template
+
+# install deps
+npm install
+# or
+yarn install
+
+# start dev server (with HMR)
+npm run dev
+# or
+yarn dev
+
+# open http://localhost:5173
 ```
+
+## Build & Preview
+
+```bash
+# build for production
+npm run build
+# or
+yarn build
+
+# preview the production build
+npm run preview
+# or
+yarn preview
+```
+
+## Project Structure
+
+- `index.html` — injects Forge Viewer CSS/JS and mounts React  
+- `src/main.tsx` — React entry point  
+- `src/App.tsx` — layout, theme toggle, grid of panels  
+- `src/components/pages/`  
+  • `Revitviewer.tsx` — upload/view/download UI & Forge viewer  
+  • `Chatbot.tsx`, `History.tsx`, `Scratchpad.tsx` — side panels  
+- `src/components/ui/styles/RevitViewer.css` — custom CSS for the viewer layout  
+- `src/lib/utils.ts` — helper (`cn`) for Tailwind class merging  
+
+## Scripts
+
+- `npm run dev` / `yarn dev` — start development server  
+- `npm run build` / `yarn build` — build production assets  
+- `npm run preview` / `yarn preview` — preview production build  
+- `npm run lint` / `yarn lint` — run ESLint  
+
+## Tips
+
+- Press **Ctrl+Shift+V** in VS Code to preview this Markdown.  
+- Inspect network requests in the browser to verify `VITE_API_URL` calls.  
+- If the Forge Viewer fails, ensure scripts are loaded in `index.html` and that your backend’s `/token` endpoint is reachable.
+
+## Customization
+
+- Tailwind config in `tailwind.config.js`  
+- Vite aliases (`@` → `src/`) in `vite.config.ts`  
+- Modify UI in `src/components/pages/Revitviewer.tsx`  
+
+Enjoy building!
