@@ -65,14 +65,15 @@ export default function RevitViewer() {
     const isRFA = name.endsWith(".rfa");
     const isRVT = name.endsWith(".rvt");
     const isIFC = name.endsWith(".ifc");
+    const isSTEP = name.endsWith(".step") || name.endsWith(".stp");
     const sizeMB = file.size / 1024 / 1024;
 
     log(`Selected file: ${file.name} (${sizeMB.toFixed(2)} MB)`);
     if (isRFA) {
       return log("❌ RFA not supported. Convert to RVT first.");
     }
-    if (!isRVT && !isIFC) {
-      log("❌ Only .rvt and .ifc supported");
+    if (!isRVT && !isIFC && !isSTEP) {
+      log("❌ Only .rvt, .ifc and .step/.stp supported");
       log(
         "📋 Supported: " +
           (supportedFormats
@@ -195,7 +196,7 @@ export default function RevitViewer() {
       <header className="controls-header">
         <input
           type="file"
-          accept=".rvt,.rfa,.ifc"
+          accept=".rvt,.rfa,.ifc,.step,.stp"
           onChange={choose}
           disabled={uploading}
           className="file-input"
