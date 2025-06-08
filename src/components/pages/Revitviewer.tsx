@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import "../ui/styles/RevitViewer.css";
 
-const API = "http://localhost:8000";
+const MODEL_API = "http://45.198.13.98:9000";
+const BIMUI_API = "http://45.198.13.98:8001";
+
 let viewerScriptPromise: Promise<void> | null = null;
 
 function loadViewer() {
   if (!viewerScriptPromise) {
     viewerScriptPromise = new Promise((resolve, reject) => {
       const s = document.createElement("script");
-      s.src =
-        "https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js";
+      s.src = "https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js";
       s.onload = () => resolve();
       s.onerror = () => reject("Failed to load Forge Viewer");
       document.head.appendChild(s);
@@ -18,12 +19,14 @@ function loadViewer() {
   return viewerScriptPromise;
 }
 
-export default function RevitViewer() {
+type RevitViewerProps = {
+  stepFilePath?: string | null;
+};
+
+const RevitViewer: React.FC<RevitViewerProps> = ({ stepFilePath }) => {
   const [urn, setUrn] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [viewer, setViewer] = useState<Autodesk.Viewing.GuiViewer3D | null>(null);
-  const [supportedFormats, setSupportedFormats] = useState<any>(null);
+  const [viewer, setViewer] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
@@ -32,153 +35,118 @@ export default function RevitViewer() {
     setLogs((l) => [...l, `${new Date().toLocaleTimeString()}: ${m}`]);
   };
 
-  // load supported formats once
   useEffect(() => {
-    fetch(`${API}/supported-formats`)
-      .then((r) => r.json())
-      .then((data) => setSupportedFormats(data))
-      .catch((err) => log("Failed to load supported formats: " + err));
-  }, []);
-
-  // cleanup viewer when unmounting or resetting
-  useEffect(() => {
-    return () => viewer?.finish();
+    return () => viewer?.finish?.();
   }, [viewer]);
 
-  // file chooser
-  function choose(e: React.ChangeEvent<HTMLInputElement>) {
-    if (viewer) {
-      viewer.finish();
-      setViewer(null);
-    }
-    setLogs([]);
-    setUploadProgress(0);
-    const files = e.target.files;
-    if (files && files.length) setFile(files[0]);
-  }
-
-  // upload, translate, and show in Forge Viewer
-  async function run() {
-    if (!file) return log("Pick a file first");
-
-    const name = file.name.toLowerCase();
-    const isRFA = name.endsWith(".rfa");
-    const isRVT = name.endsWith(".rvt");
-    const isIFC = name.endsWith(".ifc");
-    const isSTEP = name.endsWith(".step") || name.endsWith(".stp");
-    const sizeMB = file.size / 1024 / 1024;
-
-    log(`Selected file: ${file.name} (${sizeMB.toFixed(2)} MB)`);
-    if (isRFA) {
-      return log("❌ RFA not supported. Convert to RVT first.");
-    }
-    if (!isRVT && !isIFC && !isSTEP) {
-      log("❌ Only .rvt, .ifc and .step/.stp supported");
-      log(
-        "📋 Supported: " +
-          (supportedFormats
-            ? Object.values(supportedFormats.supported_formats).flat().join(", ")
-            : "loading…")
-      );
+  // Automatically upload and view the STEP file if path is provided
+  useEffect(() => {
+    if (!stepFilePath) {
+      log("[DEBUG] No STEP file path provided to RevitViewer.");
       return;
     }
-    if (sizeMB > 100) {
-      log(`⚠️ Large file (${sizeMB.toFixed(2)} MB) may take a while`);
-    }
+    (async () => {
+      try {
+        setUploading(true);
+        setUploadProgress(5);
+        setLogs([]);
+        log(`[DEBUG] Fetching STEP file from model API: ${stepFilePath}`);
+        const downloadUrl = `${MODEL_API}/download-step?path=${encodeURIComponent(stepFilePath)}`;
+        log(`[DEBUG] GET ${downloadUrl}`);
+        const res = await fetch(downloadUrl);
+        log(`[DEBUG] STEP file fetch status: ${res.status}`);
+        if (!res.ok) throw new Error(`Failed to fetch STEP file: ${res.statusText}`);
+        const blob = await res.blob();
 
-    setUploading(true);
-    setUploadProgress(10);
+        setUploadProgress(20);
+        log("[DEBUG] Uploading STEP file to BIMui API...");
+        const fd = new FormData();
+        fd.append("file", new File([blob], "pred.step", { type: "application/octet-stream" }));
+        const up = await fetch(`${BIMUI_API}/upload-rvt`, {
+          method: "POST",
+          body: fd,
+        });
+        log(`[DEBUG] BIMui /upload-rvt status: ${up.status}`);
+        if (!up.ok) {
+          const err = await up.text();
+          log(`[DEBUG] Upload response: ${err}`);
+          throw new Error("Upload failed: " + err);
+        }
+        setUploadProgress(50);
+        const { urn: newUrn } = await up.json();
+        setUrn(newUrn);
+        log(`[DEBUG] Upload complete – URN: ${newUrn}`);
 
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      log(`⬆ Uploading…`);
-      setUploadProgress(20);
+        // Poll for translation
+        log("[DEBUG] ⏳ Translating…");
+        let status = "pending", tries = 0;
+        while (status === "pending" && tries < 120) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const st = await fetch(`${BIMUI_API}/status/${newUrn}`).then((r) => r.json());
+          status = st.status;
+          setUploadProgress(Math.min(60 + (tries / 120) * 30, 90));
+          log(`[DEBUG] ⏳ Status: ${status} ${st.progress || ""}`);
+          if (status === "failed") throw new Error("Translation failed");
+          tries++;
+        }
+        if (status !== "success") throw new Error("Translation timed out");
+        log("[DEBUG] ✅ Translation done");
+        setUploadProgress(95);
 
-      const up = await fetch(`${API}/upload-rvt`, {
-        method: "POST",
-        body: fd,
-        signal: AbortSignal.timeout(30 * 60 * 1000),
-      });
-      if (!up.ok) {
-        const err = await up.text();
-        throw new Error("Upload failed: " + err);
-      }
-      setUploadProgress(50);
-      const { urn: newUrn } = await up.json();
-      setUrn(newUrn);
-      log(`✔ Upload complete – URN: ${newUrn}`);
-      setUploadProgress(60);
-
-      // poll for translation
-      log("⏳ Translating…");
-      let status = "pending",
-        tries = 0;
-      while (status === "pending" && tries < 120) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const st = await fetch(`${API}/status/${newUrn}`).then((r) => r.json());
-        status = st.status;
-        setUploadProgress(Math.min(60 + (tries / 120) * 30, 90));
-        log(`⏳ Status: ${status} ${st.progress || ""}`);
-        if (status === "failed") throw new Error("Translation failed");
-        tries++;
-      }
-      if (status !== "success") throw new Error("Translation timed out");
-      log("✅ Translation done");
-      setUploadProgress(95);
-
-      // initialize viewer
-      const { access_token } = await fetch(`${API}/token`).then((r) => r.json());
-      log("🔑 Got token");
-      await loadViewer();
-      log("🔥 Starting viewer");
-      Autodesk.Viewing.Initializer(
-        { env: "AutodeskProduction", api: "derivativeV2", accessToken: access_token },
-        () => {
-          const div = document.getElementById("forge")!;
-          const v = new Autodesk.Viewing.GuiViewer3D(div);
-          v.start();
-          Autodesk.Viewing.Document.load(
-            `urn:${newUrn}`,
-            (doc) => {
-              const viewable =
-                doc.getRoot().getDefaultGeometry() ||
-                doc.getRoot().search({ type: "geometry" })[0];
-              if (viewable) {
-                v.loadDocumentNode(doc, viewable).then(() => {
-                  log("👀 Model loaded");
+        // Initialize viewer
+        const { access_token } = await fetch(`${BIMUI_API}/token`).then((r) => r.json());
+        log("[DEBUG] 🔑 Got token");
+        await loadViewer();
+        log("[DEBUG] 🔥 Starting viewer");
+        Autodesk.Viewing.Initializer(
+          { env: "AutodeskProduction", api: "derivativeV2", accessToken: access_token },
+          () => {
+            const div = document.getElementById("forge")!;
+            const v = new Autodesk.Viewing.GuiViewer3D(div);
+            v.start();
+            Autodesk.Viewing.Document.load(
+              `urn:${newUrn}`,
+              (doc) => {
+                const viewable =
+                  doc.getRoot().getDefaultGeometry() ||
+                  doc.getRoot().search({ type: "geometry" })[0];
+                if (viewable) {
+                  v.loadDocumentNode(doc, viewable).then(() => {
+                    log("[DEBUG] 👀 Model loaded");
+                    setUploadProgress(100);
+                  });
+                } else {
+                  log("[DEBUG] ❌ No viewable geometry");
                   setUploadProgress(100);
-                });
-              } else {
-                log("❌ No viewable geometry");
+                }
+              },
+              (err) => {
+                log("[DEBUG] Viewer error: " + JSON.stringify(err));
                 setUploadProgress(100);
               }
-            },
-            (err) => {
-              log("Viewer error: " + JSON.stringify(err));
-              setUploadProgress(100);
-            }
-          );
-          setViewer(v);
-        }
-      );
-    } catch (err: any) {
-      log("❌ " + (err.message || err));
-      setUploadProgress(0);
-    } finally {
-      setUploading(false);
-    }
-  }
+            );
+            setViewer(v);
+          }
+        );
+      } catch (err: any) {
+        log("[DEBUG] ❌ " + (err.message || err));
+        setUploadProgress(0);
+      } finally {
+        setUploading(false);
+      }
+    })();
+    // eslint-disable-next-line
+  }, [stepFilePath]);
 
-  // download original/derivative
+  // Download the processed model from BIMui
   async function downloadDerivative() {
     if (!urn) return;
-    log("⬇ Downloading…");
-    const res = await fetch(`${API}/download/${urn}`);
-    if (!res.ok) return log("❌ Download failed");
+    log("[DEBUG] ⬇ Downloading…");
+    const res = await fetch(`${BIMUI_API}/download/${urn}`);
+    if (!res.ok) return log("[DEBUG] ❌ Download failed");
     const disp = res.headers.get("Content-Disposition") || "";
     const m = /filename="?([^"]+)"?/.exec(disp);
-    const filename = m ? m[1] : file?.name || "download";
+    const filename = m ? m[1] : "download";
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -192,22 +160,7 @@ export default function RevitViewer() {
 
   return (
     <div className="revit-root">
-      {/* Top row: controls only */}
       <header className="controls-header">
-        <input
-          type="file"
-          accept=".rvt,.rfa,.ifc,.step,.stp"
-          onChange={choose}
-          disabled={uploading}
-          className="file-input"
-        />
-        <button
-          onClick={run}
-          disabled={!file || uploading}
-          className="btn-primary"
-        >
-          {uploading ? "Processing…" : "Upload & View"}
-        </button>
         {urn && (
           <button
             onClick={downloadDerivative}
@@ -217,11 +170,17 @@ export default function RevitViewer() {
           </button>
         )}
       </header>
-
-      {/* Bottom row: full-height Forge viewer */}
       <main className="viewer-container">
         <div id="forge" />
+        <div className="logs">
+          {logs.map((l, i) => (
+            <div key={i} className="logline">{l}</div>
+          ))}
+          {uploading && <div>Progress: {uploadProgress}%</div>}
+        </div>
       </main>
     </div>
   );
-}
+};
+
+export default RevitViewer;
