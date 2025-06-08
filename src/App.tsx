@@ -6,6 +6,7 @@ import RevitViewer from "./components/pages/Revitviewer";
 
 function App() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [stepFilePath, setStepFilePath] = useState<string | null>(null);
 
   useEffect(() => {
     if (theme === "dark") {
@@ -30,36 +31,19 @@ function App() {
         grid-cols-1
         md:grid-cols-[1fr_2fr_2fr]
       ">
-        {/* History (left) */}
-        <div className="
-          rounded-xl 
-          p-4 
-          bg-gray-100 dark:bg-gray-900 
-          shadow 
-          h-full
-        ">
+        <div className="rounded-xl p-4 bg-gray-100 dark:bg-gray-900 shadow h-full">
           <History />
         </div>
-        {/* Center column: Chatbot + ScratchPad */}
         <div className="flex flex-col h-full gap-4">
-          {/* Chatbot - fixed height */}
-          <div className="rounded-xl bg-gray-100 dark:bg-gray-900 shadow p-4" style={{ height: 180 }}>
-            <Chatbot />
+          <div className="rounded-xl bg-gray-100 dark:bg-gray-900 shadow p-4" style={{ height: 220 }}>
+            <Chatbot setStepFilePath={setStepFilePath} />
           </div>
-          {/* ScratchPad - resizable */}
           <div className="flex-1 min-h-[120px]">
             <ScratchPad />
           </div>
         </div>
-        {/* RevitViewer (right) */}
-        <div className="
-          rounded-xl 
-          p-4 
-          bg-gray-100 dark:bg-gray-900
-          shadow
-          h-full
-        ">
-          <RevitViewer />
+        <div className="rounded-xl p-4 bg-gray-100 dark:bg-gray-900 shadow h-full">
+          <RevitViewer stepFilePath={stepFilePath} />
         </div>
       </div>
     </div>
